@@ -81,35 +81,16 @@ fn handle_modal_keys(model: &mut Model, key: KeyEvent) -> Result<bool> {
         let max_row = rows.saturating_sub(1);
         let max_col = cols.saturating_sub(1);
 
-        let mut index_changed = false;
         match key.code {
-            KeyCode::Up => {
-                row = row.saturating_sub(1);
-                index_changed = true;
-            }
-            KeyCode::Down => {
-                row = (row + 1).min(max_row);
-                index_changed = true;
-            }
-            KeyCode::Left => {
-                col = col.saturating_sub(1);
-                index_changed = true;
-            }
-            KeyCode::Right => {
-                col = (col + 1).min(max_col);
-                index_changed = true;
-            }
-            _ => {}
+            KeyCode::Up => row = row.saturating_sub(1),
+            KeyCode::Down => row = (row + 1).min(max_row),
+            KeyCode::Left => col = col.saturating_sub(1),
+            KeyCode::Right => col = (col + 1).min(max_col),
+            _ => return Ok(true),
         }
 
-        if index_changed {
-            if (row, col) != model.color_picker.grid_index {
-                model.color_picker.grid_index = (row, col);
-                return update(model, Message::UpdateColorFromGrid);
-            } else {
-                return Ok(true);
-            }
-        }
+        model.color_picker.grid_index = (row, col);
+        return update(model, Message::UpdateColorFromGrid);
     }
 
     match key.code {
