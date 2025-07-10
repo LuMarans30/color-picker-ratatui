@@ -47,15 +47,11 @@ impl Widget for Button<'_> {
         };
 
         // Use cyan border when focused
-        let border_style = if self.focused {
-            Style::default().fg(Color::Cyan)
-        } else {
-            Style::default().fg(fg)
-        };
+        let border_style = Style::default().fg(if self.focused { Color::Cyan } else { fg });
 
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(border_style) // Apply border style
+            .border_style(border_style)
             .style(Style::default().bg(bg).fg(fg));
 
         block.render(area, buf);
