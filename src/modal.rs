@@ -15,7 +15,6 @@ use crate::{
 #[derive(Debug)]
 pub struct ColorPickerWidget {
     pub modal_state: bool,
-    pub selected_color: Option<Color>,
     pub grid_index: (usize, usize),
     pub color_input: ColorInput,
     pub focus: Focus,
@@ -56,13 +55,13 @@ impl ColorPickerWidget {
         };
     }
 
-    pub fn get_current_color(&self) -> Color {
+    pub fn selected_color(&self) -> Option<Color> {
         let (_, cols) = self.grid_dimensions;
         let idx = self.grid_index.0 * cols + self.grid_index.1;
-        self.colors.get(idx).cloned().unwrap_or(Color::Black)
+        self.colors.get(idx).copied()
     }
 
-    pub fn generate_colors() -> Vec<Color> {
+    pub fn generate_colors() -> (Vec<Color>, (usize, usize)) {
         // Get all material design colors
         let hues = [
             &material::RED,
@@ -83,12 +82,10 @@ impl ColorPickerWidget {
             &material::DEEP_ORANGE,
         ];
 
-        // Get all accent levels (50 to 900)
         let accents = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
 
-        let mut colors = Vec::new();
+        let mut colors = Vec::with_capacity(hues.len() * accents.len());
 
-        // Create a distinct palette by selecting colors across hues and accents
         for &accent in &accents {
             for hue in &hues {
                 let color = match accent {
@@ -102,24 +99,29 @@ impl ColorPickerWidget {
                     700 => hue.c700,
                     800 => hue.c800,
                     900 => hue.c900,
-                    _ => hue.c500, // fallback
+                    _ => hue.c500,
                 };
                 colors.push(color);
             }
         }
 
-        colors
+        (colors, (accents.len(), hues.len()))
+    }
+
+    pub fn color_to_hex(color: Color) -> Option<String> {
+        match color {
+            Color::Rgb(r, g, b) => Some(format!("{r:02X}{g:02X}{b:02X}")),
+            _ => None,
+        }
     }
 }
 
 impl Default for ColorPickerWidget {
     fn default() -> Self {
-        let colors = ColorPickerWidget::generate_colors();
-        let grid_dimensions = (10, 16);
+        let (colors, grid_dimensions) = Self::generate_colors();
 
         Self {
             modal_state: false,
-            selected_color: None,
             grid_index: (0, 0),
             color_input: ColorInput::default(),
             focus: Focus::default(),
@@ -185,8 +187,6 @@ impl ColorPickerWidget {
         let inner = grid_block.inner(area);
 
         let (rows, cols) = self.grid_dimensions;
-        let total_colors = self.colors.len();
-
         let row_constraints = vec![Constraint::Ratio(1, rows as u32); rows];
         let grid_layout = Layout::vertical(row_constraints).split(inner);
 
@@ -196,23 +196,15 @@ impl ColorPickerWidget {
 
             for col in 0..cols {
                 let idx = row * cols + col;
-                if idx >= total_colors {
+                let Some(&color) = self.colors.get(idx) else {
                     continue;
-                }
+                };
 
                 let cell = row_layout[col];
                 let is_selected = self.grid_index == (row, col);
-                let color = self.colors[idx];
 
-                // Fill cell with color
-                for y in cell.top()..cell.bottom() {
-                    for x in cell.left()..cell.right() {
-                        let buf_cell = Buffer::cell_mut(buf, Position::new(x, y)).unwrap();
-                        buf_cell.set_bg(color).set_fg(color);
-                    }
-                }
+                buf.set_style(cell, Style::default().bg(color).fg(color));
 
-                // Draw selection border if selected
                 if is_selected {
                     let selection_block = Block::default()
                         .borders(Borders::ALL)
@@ -233,7 +225,7 @@ impl ColorPickerWidget {
             } else {
                 State::Normal
             })
-            .focused(apply_focused) // Pass focus state
+            .focused(apply_focused)
             .render(buttons[0], buf);
 
         Button::new("Cancel")
@@ -242,26 +234,24 @@ impl ColorPickerWidget {
             } else {
                 State::Normal
             })
-            .focused(cancel_focused) // Pass focus state
+            .focused(cancel_focused)
             .render(buttons[2], buf);
     }
 
     fn render_text_inputs(&self, area: Rect, buf: &mut Buffer) {
-        // Use cyan border when focused
-        let border_style = if self.focus == Focus::Input {
-            Style::default().fg(Color::Cyan)
-        } else {
-            Style::default()
+        let border_color = match self.focus {
+            Focus::Input => Color::Cyan,
+            _ if self.color_input.is_valid() => Color::Green,
+            _ => Color::Red,
         };
 
         let input_block = Block::default()
             .borders(Borders::ALL)
             .title("HEX Color")
-            .border_style(border_style);
+            .border_style(Style::default().fg(border_color));
 
         input_block.render(area, buf);
 
-        // Only use the middle row for input
         let input_area = Rect {
             x: area.x + 1,
             y: area.y + 1,
@@ -269,16 +259,11 @@ impl ColorPickerWidget {
             height: 1,
         };
 
-        let mut input = self.color_input.clone();
-        input.focused = self.focus == Focus::Input;
-        input.render(input_area, buf);
-    }
-
-    pub fn color_to_hex(color: Color) -> String {
-        match color {
-            Color::Rgb(r, g, b) => format!("{r:02X}{g:02X}{b:02X}"),
-            _ => String::new(),
-        }
+        let input_widget = ColorInputWidget {
+            input: &self.color_input,
+            focused: self.focus == Focus::Input,
+        };
+        input_widget.render(input_area, buf);
     }
 }
 
@@ -294,4 +279,29 @@ fn modal_area(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
         popup_width,
         popup_height,
     )
+}
+
+pub struct ColorInputWidget<'a> {
+    pub input: &'a ColorInput,
+    pub focused: bool,
+}
+
+impl Widget for ColorInputWidget<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let input_display = if self.input.input.is_empty() {
+            "#______".to_string()
+        } else {
+            self.input.input.clone()
+        };
+
+        buf.set_string(area.x, area.y, &input_display, Style::default());
+
+        if self.focused {
+            let x = area.x + self.input.cursor_pos as u16;
+            let y = area.y;
+            let cell = Buffer::cell_mut(buf, Position::new(x, y)).unwrap();
+            cell.set_char('|');
+            cell.set_style(Style::default().add_modifier(ratatui::style::Modifier::RAPID_BLINK));
+        }
+    }
 }

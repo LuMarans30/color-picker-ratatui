@@ -10,7 +10,7 @@ use ratatui::{
 pub struct Button<'a> {
     label: Line<'a>,
     pub state: State,
-    focused: bool, // Add focused state
+    focused: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,7 +24,7 @@ impl<'a> Button<'a> {
         Self {
             label: label.into(),
             state: State::Normal,
-            focused: false, // Initialize as not focused
+            focused: false,
         }
     }
 
@@ -33,7 +33,6 @@ impl<'a> Button<'a> {
         self
     }
 
-    // Add method to set focus
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self

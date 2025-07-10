@@ -39,11 +39,13 @@ pub fn update(model: &mut Model, message: Message) -> Result<bool> {
             }
         }
         Message::UpdateColorFromGrid => {
-            let color = model.color_picker.get_current_color();
-            let hex = ColorPickerWidget::color_to_hex(color);
-            model.color_picker.color_input.input = hex;
-            model.color_picker.color_input.cursor_pos = model.color_picker.color_input.input.len();
-            model.color_picker.selected_color = Some(color);
+            if let Some(color) = model.color_picker.selected_color()
+                && let Some(hex) = ColorPickerWidget::color_to_hex(color)
+            {
+                model.color_picker.color_input.input = hex;
+                model.color_picker.color_input.cursor_pos =
+                    model.color_picker.color_input.input.len();
+            }
             Ok(true)
         }
         Message::ApplyColor => {
@@ -56,10 +58,10 @@ pub fn update(model: &mut Model, message: Message) -> Result<bool> {
         }
         Message::ToggleModal => {
             model.color_picker.modal_state = !model.color_picker.modal_state;
-            if model.color_picker.modal_state {
-                // Initialize text field with current color
-                let color = model.color_picker.get_current_color();
-                let hex = ColorPickerWidget::color_to_hex(color);
+            if model.color_picker.modal_state
+                && let Some(color) = model.color_picker.selected_color()
+                && let Some(hex) = ColorPickerWidget::color_to_hex(color)
+            {
                 model.color_picker.color_input.input = hex;
                 model.color_picker.color_input.cursor_pos =
                     model.color_picker.color_input.input.len();
