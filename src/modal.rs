@@ -173,11 +173,11 @@ impl Widget for &ColorPickerWidget {
 
 impl ColorPickerWidget {
     fn render_color_palette(&self, area: Rect, buf: &mut Buffer) {
-        let border_style = if self.focus == Focus::Grid {
-            Style::default().fg(Color::Cyan)
+        let border_style = Style::default().fg(if self.focus == Focus::Grid {
+            Color::Cyan
         } else {
-            Style::default()
-        };
+            Color::Reset
+        });
 
         let grid_block = Block::default()
             .borders(Borders::ALL)
