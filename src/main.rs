@@ -12,6 +12,9 @@ use crate::modal::{ColorPickerWidget, Focus};
 mod button;
 mod color_input;
 mod modal;
+mod util {
+    pub mod styles;
+}
 
 #[derive(Debug, Default)]
 pub struct Model {
@@ -25,47 +28,98 @@ pub enum Message {
     ApplyColor,
     UpdateColorFromGrid,
     CancelColorSelection,
+    FocusNext,
+    FocusPrev,
     Quit,
     Ignore,
 }
 
+// Centralized key mapping
+struct KeyHandler;
+
+impl KeyHandler {
+    fn handle_global_keys(key: KeyEvent) -> Option<Message> {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q' | 'Q') => Some(Message::Quit),
+            KeyCode::Char('p' | 'P') => Some(Message::ToggleModal),
+            _ => None,
+        }
+    }
+
+    fn handle_modal_navigation(model: &mut Model, key: KeyEvent) -> Option<Message> {
+        if model.color_picker.focus != Focus::Grid {
+            return None;
+        }
+
+        match key.code {
+            KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right => {
+                Self::update_grid_position(model, key.code);
+                Some(Message::UpdateColorFromGrid)
+            }
+            _ => None,
+        }
+    }
+
+    fn handle_modal_actions(model: &Model, key: KeyEvent) -> Option<Message> {
+        match key.code {
+            KeyCode::Tab => Some(Message::FocusNext),
+            KeyCode::BackTab => Some(Message::FocusPrev),
+            KeyCode::Enter => match model.color_picker.focus {
+                Focus::Apply => Some(Message::ApplyColor),
+                Focus::Cancel => Some(Message::CancelColorSelection),
+                _ => None,
+            },
+            KeyCode::Esc => Some(Message::CancelColorSelection),
+            _ => None,
+        }
+    }
+
+    fn handle_input_keys(model: &mut Model, key: KeyEvent) -> bool {
+        if model.color_picker.focus == Focus::Input {
+            model.color_picker.color_input.handle_key_event(key);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn update_grid_position(model: &mut Model, key_code: KeyCode) {
+        let (mut row, mut col) = model.color_picker.grid_index;
+        let (rows, cols) = model.color_picker.grid_dimensions;
+        let max_row = rows.saturating_sub(1);
+        let max_col = cols.saturating_sub(1);
+
+        match key_code {
+            KeyCode::Up => row = row.saturating_sub(1),
+            KeyCode::Down => row = (row + 1).min(max_row),
+            KeyCode::Left => col = col.saturating_sub(1),
+            KeyCode::Right => col = (col + 1).min(max_col),
+            _ => unreachable!(),
+        }
+
+        model.color_picker.grid_index = (row, col);
+    }
+}
+
 pub fn update(model: &mut Model, message: Message) -> Result<bool> {
     match message {
-        Message::KeyPress(key) if key.kind == KeyEventKind::Press => {
-            if model.color_picker.modal_state {
-                handle_modal_keys(model, key)
-            } else {
-                handle_global_keys(model, key)
-            }
-        }
+        Message::KeyPress(key) if key.kind == KeyEventKind::Press => handle_key_press(model, key),
         Message::UpdateColorFromGrid => {
-            if let Some(color) = model.color_picker.selected_color()
-                && let Some(hex) = ColorPickerWidget::color_to_hex(color)
-            {
-                model.color_picker.color_input.input = hex;
-                model.color_picker.color_input.cursor_pos =
-                    model.color_picker.color_input.input.len();
-            }
+            update_color_from_grid(model);
             Ok(true)
         }
-        Message::ApplyColor => {
-            model.color_picker.modal_state = false;
-            Ok(true)
-        }
-        Message::CancelColorSelection => {
-            model.color_picker.modal_state = false;
-            Ok(true)
-        }
+        Message::ApplyColor => Ok(false),
+        Message::CancelColorSelection => Ok(false),
         Message::ToggleModal => {
-            model.color_picker.modal_state = !model.color_picker.modal_state;
-            if model.color_picker.modal_state
-                && let Some(color) = model.color_picker.selected_color()
-                && let Some(hex) = ColorPickerWidget::color_to_hex(color)
-            {
-                model.color_picker.color_input.input = hex;
-                model.color_picker.color_input.cursor_pos =
-                    model.color_picker.color_input.input.len();
-            }
+            toggle_modal(model);
+            Ok(true)
+        }
+        Message::FocusNext => {
+            model.color_picker.focus_next();
+            Ok(true)
+        }
+        Message::FocusPrev => {
+            model.color_picker.focus_prev();
             Ok(true)
         }
         Message::Quit => Ok(false),
@@ -74,54 +128,42 @@ pub fn update(model: &mut Model, message: Message) -> Result<bool> {
     }
 }
 
-fn handle_modal_keys(model: &mut Model, key: KeyEvent) -> Result<bool> {
-    if model.color_picker.focus == Focus::Grid {
-        let (mut row, mut col) = model.color_picker.grid_index;
-        let (rows, cols) = model.color_picker.grid_dimensions;
-        let max_row = rows.saturating_sub(1);
-        let max_col = cols.saturating_sub(1);
-
-        match key.code {
-            KeyCode::Up => row = row.saturating_sub(1),
-            KeyCode::Down => row = (row + 1).min(max_row),
-            KeyCode::Left => col = col.saturating_sub(1),
-            KeyCode::Right => col = (col + 1).min(max_col),
-            _ => return Ok(true),
-        }
-
-        model.color_picker.grid_index = (row, col);
-        return update(model, Message::UpdateColorFromGrid);
+fn handle_key_press(model: &mut Model, key: KeyEvent) -> Result<bool> {
+    if let Some(message) = KeyHandler::handle_global_keys(key) {
+        return update(model, message);
     }
 
-    match key.code {
-        KeyCode::Esc => update(model, Message::CancelColorSelection),
-        KeyCode::Tab => {
-            model.color_picker.focus_next();
-            Ok(true)
+    if model.color_picker.modal_state {
+        if let Some(message) = KeyHandler::handle_modal_navigation(model, key) {
+            return update(model, message);
         }
-        KeyCode::BackTab => {
-            model.color_picker.focus_prev();
-            Ok(true)
+
+        if let Some(message) = KeyHandler::handle_modal_actions(model, key) {
+            return update(model, message);
         }
-        KeyCode::Enter => match model.color_picker.focus {
-            Focus::Apply => update(model, Message::ApplyColor),
-            Focus::Cancel => update(model, Message::CancelColorSelection),
-            _ => Ok(true),
-        },
-        _ => {
-            if let Focus::Input = model.color_picker.focus {
-                model.color_picker.color_input.handle_key_event(key);
-            }
-            Ok(true)
+
+        if KeyHandler::handle_input_keys(model, key) {
+            return Ok(true);
         }
+    }
+
+    Ok(true)
+}
+
+fn update_color_from_grid(model: &mut Model) {
+    if let Some(color) = model.color_picker.selected_color()
+        && let Some(hex) = ColorPickerWidget::color_to_hex(color)
+    {
+        model.color_picker.color_input.input = hex.clone();
+        model.color_picker.color_input.cursor_pos = hex.len();
     }
 }
 
-fn handle_global_keys(model: &mut Model, key: KeyEvent) -> Result<bool> {
-    match key.code {
-        KeyCode::Char('q') => Ok(false),
-        KeyCode::Char('p') => update(model, Message::ToggleModal),
-        _ => Ok(true),
+fn toggle_modal(model: &mut Model) {
+    model.color_picker.modal_state = !model.color_picker.modal_state;
+
+    if model.color_picker.modal_state {
+        update_color_from_grid(model);
     }
 }
 

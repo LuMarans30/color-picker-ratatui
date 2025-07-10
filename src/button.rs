@@ -1,10 +1,12 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::Line,
     widgets::{Block, Borders, Widget},
 };
+
+use crate::util::styles::Styles;
 
 #[derive(Debug, Clone)]
 pub struct Button<'a> {
@@ -41,13 +43,10 @@ impl<'a> Button<'a> {
 
 impl Widget for Button<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let (bg, fg) = match self.state {
-            State::Selected => (Color::Blue, Color::White),
-            State::Normal => (Color::DarkGray, Color::Gray),
-        };
+        let (bg, fg) = Styles::button_colors(self.focused);
 
         // Use cyan border when focused
-        let border_style = Style::default().fg(if self.focused { Color::Cyan } else { fg });
+        let border_style = Styles::focus_border(self.focused);
 
         let block = Block::default()
             .borders(Borders::ALL)
